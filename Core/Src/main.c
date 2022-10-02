@@ -38,9 +38,9 @@ UART_HandleTypeDef huart2;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define ADC_BUF_LEN 291
-#define MOVING_POINT 21
-#define TRESHOLD 1.0
+#define ADC_BUF_LEN 65
+#define MOVING_POINT 11
+#define TRESHOLD 1.05
 
 /* USER CODE END PD */
 
@@ -337,7 +337,7 @@ float relative_average(const float* samples, size_t length, uint8_t moving_point
 	for (uint16_t i = half_interval; i < length - half_interval; ++i) {
 		sum += samples[i];
 	}
-	return sum / (length - moving_point) ;
+	return sum / (length - moving_point - 1) ;
 }
 
 void moving_average_filter(const float* samples, float* filtered, size_t length, uint8_t moving_point) {
@@ -380,15 +380,15 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
 	float buffer[ADC_BUF_LEN] = { 0.0f };
-	normalize(adc_buf, ADC_BUF_LEN, buffer, 100);
+	normalize(adc_buf, ADC_BUF_LEN, buffer, 1);
 
 
-	float v1 = average(buffer, ADC_BUF_LEN);
+	float v1 = average(buffer, ADC_BUF_LEN) / 100;
 
 	// Moving average filter
 	float y1[ADC_BUF_LEN] = { 0.0f };
 	moving_average_filter(buffer, y1, ADC_BUF_LEN, MOVING_POINT);
-	float v2 = average(y1, ADC_BUF_LEN);
+	float v2 = relative_average(y1, ADC_BUF_LEN, MOVING_POINT) / 100;
 
 	float y2[ADC_BUF_LEN] = { 0.0f };
 	moving_average_filterR(buffer, y2, ADC_BUF_LEN, MOVING_POINT);
