@@ -28,27 +28,32 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-#define ADC_BUF_LEN 65
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
 UART_HandleTypeDef huart2;
 
-/* USER CODE BEGIN PV */
-uint16_t adc_buf[ADC_BUF_LEN];
-uint16_t avgRaw;
+/* USER CODE END PTD */
 
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+#define ADC_BUF_LEN 1025
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+
+/* USER CODE BEGIN PV */
+
+uint16_t adc_buf[ADC_BUF_LEN];
 
 /* USER CODE END PV */
 
@@ -59,6 +64,20 @@ static void MX_USART2_UART_Init(void);
 static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
+
+// Simple average filter
+// y[x] = x[i] + x[i-1] ... + x[i-N] / N
+void normalize(uint16_t* samples, uint16_t length, float* output, uint8_t normalization);
+
+float average(float* samples, uint16_t length);
+
+float relative_average(float* samples, uint16_t length, uint8_t moving_point);
+
+// Moving Average Filter caluclated by convolution
+void moving_average_filter(float* samples, float* filtered, uint16_t length, uint8_t moving_point);
+
+// Moving Average Filter caluclated by recursion
+void moving_average_filterR(float* samples, float* filtered, uint16_t length, uint8_t moving_point);
 
 /* USER CODE END PFP */
 
@@ -295,6 +314,62 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void normalize(uint16_t* samples, uint16_t length, float* output, uint8_t normalization) {
+	for (uint16_t i = 0; i < length; i++) {
+		output[i] = (float) samples[i] / normalization;
+	}
+}
+
+float average(float* samples, uint16_t length) {
+	float sum = 0.0f;
+	for (uint16_t i = 0; i < length; ++i) {
+		sum += samples[i];
+	}
+	return ( sum / length );
+}
+
+float relative_average(float* samples, uint16_t length, uint8_t moving_point) {
+	float sum = 0.0f;
+	uint16_t half_interval = (moving_point - 1) / 2;
+
+	for (uint16_t i = half_interval; i < length - half_interval; ++i) {
+		sum += samples[i];
+	}
+	return sum / (length - moving_point) ;
+}
+
+void moving_average_filter(float* samples, float* filtered, uint16_t length, uint8_t moving_point) {
+	uint16_t half_interval = (moving_point - 1) / 2;
+
+	for (uint16_t i = half_interval; i < length - half_interval; i++) {
+		filtered[i] = 0.0f;
+		for (int16_t j = -half_interval; j < half_interval; j++) {
+			filtered[i] = filtered[i] + samples[i + j];
+		}
+		filtered[i] = filtered[i] / moving_point;
+	}
+
+}
+
+void moving_average_filterR(float* samples, float* filtered, uint16_t length, uint8_t moving_point) {
+	uint16_t p = (moving_point - 1) / 2;
+
+	// Find accumulation value
+	uint16_t acc = 0.0f;
+	for (int16_t i = 0; i < (moving_point - 1); i++) {
+		acc += samples[i];
+	}
+	filtered[p] = acc / moving_point;
+
+	// y[i] = y[i-1] + x[i+p] — x[i—q]
+	// p = (M-1)/2
+	// q = p+1
+	for (int16_t i = (p + 1); i < length - p; i++) {
+		filtered[i] = acc + samples[i + p] - samples[i - (p+1)];
+	}
+
+}
+
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
 	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
 }
@@ -302,60 +377,24 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
-	// Simple avarage filter
-	// y[x] = x[i] + x[i-1] ... + x[i-N] / N
+	float buffer[ADC_BUF_LEN] = { 0.0f };
+	normalize(adc_buf, ADC_BUF_LEN, buffer, 100);
 
-	uint16_t sum = 0;
-	for (uint8_t i = 0; i < ADC_BUF_LEN; ++i) {
-		sum += adc_buf[i];
-	}
-	avgRaw = sum / (ADC_BUF_LEN);
-	float vl = (float) avgRaw / 100;
+
+	float v1 = average(buffer, ADC_BUF_LEN);
 
 	// Moving average filter
-	float output_signal[ADC_BUF_LEN] = { 0.0f };
-	for (uint8_t i = 5; i < ADC_BUF_LEN - 5; i++) {
-		output_signal[i] = 0.0f;
-		for (int8_t j = -5; j < 5; j++) {
-			output_signal[i] = output_signal[i] + adc_buf[i + j];
-		}
-		output_signal[i] = output_signal[i]/11;
-	}
+	float y1[ADC_BUF_LEN] = { 0.0f };
+	moving_average_filter(buffer, y1, ADC_BUF_LEN, 101);
+	float v2 = average(y1, ADC_BUF_LEN);
 
-	float sum2 = 0.0f;
-	for (uint8_t i = 5; i < ADC_BUF_LEN - 5; i++) {
-		sum2 += output_signal[i];
-	}
-	float avg2 = sum2 / (ADC_BUF_LEN - 10);
-	float v2 = (float) avg2 / 100;
-
-	// Moving avarage filter with accumulation
-	float output_signal_2[ADC_BUF_LEN] = { 0.0f };
-	uint8_t ACC = 0;
-
-	for (uint8_t i = 0; i < 10; i++) {
-		ACC = ACC + adc_buf[i];
-	}
-
-	output_signal_2[5] = ACC/11;
-
-	for (uint8_t i = 6; i < ADC_BUF_LEN - 5; i++) {
-		ACC = ACC + adc_buf[i+5] - adc_buf[i-6];
-		output_signal_2[i] = ACC;
-	}
-
-	float sum3 = 0.0f;
-	for (uint8_t i = 5; i < ADC_BUF_LEN - 5; i++) {
-		sum3 += output_signal_2[i];
-	}
-	float avg3 = sum3 / (ADC_BUF_LEN - 10);
-	float v3 = (float) avg3 / 100;
-	///////
-
+	float y2[ADC_BUF_LEN] = { 0.0f };
+	moving_average_filterR(buffer, y2, ADC_BUF_LEN, 101);
+	float v3 = relative_average(y2, ADC_BUF_LEN, 101);
 
 	uint8_t pinState = 0;
 
-	if (vl < 1.0) {
+	if (v1 < 100.0) {
 		pinState = GPIO_PIN_RESET;
 	}
 	else {
@@ -363,8 +402,11 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 	}
 
 	char msg[100];
-	sprintf(msg, "Average value over %d samples and divided by %d samples: v1: %f, v2: %f, v3: %f\r\n",
-			ADC_BUF_LEN, 100, vl, v2, v3);
+	sprintf(
+			msg,
+			"Average value over %d samples and divided by %d samples: v1: %f, v2: %f, v3: %f\r\n",
+			ADC_BUF_LEN, 101, v1, v2, v3
+	);
 
 	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, pinState);
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, pinState);
