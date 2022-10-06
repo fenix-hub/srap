@@ -28,19 +28,14 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
-ADC_HandleTypeDef hadc1;
-DMA_HandleTypeDef hdma_adc1;
-
-UART_HandleTypeDef huart2;
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define ADC_BUF_LEN 65
-#define MOVING_POINT 11
-#define TRESHOLD 1.05
+#define ADC_BUF_LEN 255
+#define MOVING_POINT 25
+#define TRESHOLD 110
 
 /* USER CODE END PD */
 
@@ -52,10 +47,17 @@ UART_HandleTypeDef huart2;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+ADC_HandleTypeDef hadc2;
+
+UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
+char msg[100];
+uint16_t analog_value;
 uint16_t adc_buf[ADC_BUF_LEN];
+
 
 /* USER CODE END PV */
 
@@ -63,23 +65,10 @@ uint16_t adc_buf[ADC_BUF_LEN];
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_DMA_Init(void);
+static void MX_ADC2_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
-// Simple average filter
-// y[x] = x[i] + x[i-1] ... + x[i-N] / N
-void normalize(const uint16_t* samples, size_t length, float* output, uint8_t normalization);
-
-float average(const float* samples, size_t length);
-
-float relative_average(const float* samples, size_t length, uint8_t moving_point);
-
-// Moving Average Filter caluclated by convolution
-void moving_average_filter(const float* samples, float* filtered, size_t length, uint8_t moving_point);
-
-// Moving Average Filter caluclated by recursion
-void moving_average_filterR(const float* samples, float* filtered, size_t length, uint8_t moving_point);
 
 /* USER CODE END PFP */
 
@@ -117,16 +106,26 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
-  MX_DMA_Init();
+  MX_ADC2_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buf, ADC_BUF_LEN);
+
+  HAL_ADC_Start_IT(&hadc2);
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t*) adc_buf, ADC_BUF_LEN);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	sprintf(msg, "%d\r\n", analog_value);
+	console_log(msg);
+
+	light_pin(analog_value, TRESHOLD);
+
+	HAL_ADC_Start(&hadc2);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -211,7 +210,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DMAContinuousRequests = ENABLE;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
@@ -220,7 +219,7 @@ static void MX_ADC1_Init(void)
 
   /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
   */
-  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Channel = ADC_CHANNEL_11;
   sConfig.Rank = 1;
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
@@ -230,6 +229,58 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief ADC2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC2_Init(void)
+{
+
+  /* USER CODE BEGIN ADC2_Init 0 */
+
+  /* USER CODE END ADC2_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC2_Init 1 */
+
+  /* USER CODE END ADC2_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc2.Instance = ADC2;
+  hadc2.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc2.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc2.Init.ScanConvMode = DISABLE;
+  hadc2.Init.ContinuousConvMode = ENABLE;
+  hadc2.Init.DiscontinuousConvMode = DISABLE;
+  hadc2.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc2.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc2.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc2.Init.NbrOfConversion = 1;
+  hadc2.Init.DMAContinuousRequests = DISABLE;
+  hadc2.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_10;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC2_Init 2 */
+
+  /* USER CODE END ADC2_Init 2 */
 
 }
 
@@ -263,22 +314,6 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
-
-}
-
-/**
-  * Enable DMA controller clock
-  */
-static void MX_DMA_Init(void)
-{
-
-  /* DMA controller clock enable */
-  __HAL_RCC_DMA2_CLK_ENABLE();
-
-  /* DMA interrupt init */
-  /* DMA2_Stream0_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
 
 }
 
@@ -322,7 +357,7 @@ void normalize(const uint16_t* samples, size_t length, float* output, uint8_t no
 	}
 }
 
-float average(const float* samples, size_t length) {
+float average(const uint16_t* samples, size_t length) {
 	float sum = 0.0f;
 	for (uint16_t i = 0; i < length; ++i) {
 		sum += samples[i];
@@ -340,7 +375,7 @@ float relative_average(const float* samples, size_t length, uint8_t moving_point
 	return sum / (length - moving_point - 1) ;
 }
 
-void moving_average_filter(const float* samples, float* filtered, size_t length, uint8_t moving_point) {
+void moving_average_filter(const uint16_t* samples, float* filtered, size_t length, uint8_t moving_point) {
 	uint16_t half_interval = (moving_point - 1) / 2;
 
 	for (uint16_t i = half_interval; i < length - half_interval; i++) {
@@ -353,66 +388,82 @@ void moving_average_filter(const float* samples, float* filtered, size_t length,
 
 }
 
-void moving_average_filterR(const float* samples, float* filtered, size_t length, uint8_t moving_point) {
+void moving_average_filterR(const uint16_t* samples, float* filtered, size_t length, uint8_t moving_point) {
+
+	float t_filtered[length];
+	memset(t_filtered, 0, length);
+
 	uint16_t p = (moving_point - 1) / 2;
 
 	// Find accumulation value
-	uint16_t acc = 0.0f;
+	float acc = 0.0f;
 	for (int16_t i = 0; i < (moving_point - 1); i++) {
 		acc += samples[i];
 	}
-	filtered[p] = acc / moving_point;
+	t_filtered[p] = acc / moving_point;
 
 	// y[i] = y[i-1] + x[i+p] — x[i—q]
 	// p = (M-1)/2
 	// q = p+1
 	for (int16_t i = (p + 1); i < length - p; i++) {
-		filtered[i] = acc + samples[i + p] - samples[i - (p+1)];
+		acc = acc + samples[i + p] - samples[i - (p+1)];
+		t_filtered[i] = acc;
 	}
 
+	memcpy(filtered, t_filtered, length);
+
 }
+
+void console_log(const char* message) {
+	HAL_UART_Transmit(&huart2, (uint8_t*) message, strlen(message), HAL_MAX_DELAY);
+}
+
+
+void light_pin(const uint16_t value, const uint16_t threshold) {
+	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, value > threshold);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, value > threshold);
+}
+
 
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
-	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
 }
 
+
+
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
-	float buffer[ADC_BUF_LEN] = { 0.0f };
-	normalize(adc_buf, ADC_BUF_LEN, buffer, 1);
-
-
-	float v1 = average(buffer, ADC_BUF_LEN) / 100;
-
-	// Moving average filter
-	float y1[ADC_BUF_LEN] = { 0.0f };
-	moving_average_filter(buffer, y1, ADC_BUF_LEN, MOVING_POINT);
-	float v2 = relative_average(y1, ADC_BUF_LEN, MOVING_POINT) / 100;
-
-	float y2[ADC_BUF_LEN] = { 0.0f };
-	moving_average_filterR(buffer, y2, ADC_BUF_LEN, MOVING_POINT);
-	float v3 = relative_average(y2, ADC_BUF_LEN, MOVING_POINT);
-
-	uint8_t pinState = 0;
-
-	if (v2 < TRESHOLD) {
-		pinState = GPIO_PIN_RESET;
-	}
-	else {
-		pinState = GPIO_PIN_SET;
+	if (hadc == &hadc2) {
+		analog_value = HAL_ADC_GetValue(&hadc2);
 	}
 
-	char msg[100];
-	sprintf(
-			msg,
-			"Average value over %d samples normalized by %d: v1: %f, v2: %f, v3: %f\r\n",
-			ADC_BUF_LEN, 100, v1, v2, v3
-	);
+	if (hadc == &hadc1) {
+		uint16_t buffer[ADC_BUF_LEN] = { 0 };
+		//normalize(adc_buf, ADC_BUF_LEN, buffer, 1);
 
-	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, pinState);
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, pinState);
-	HAL_UART_Transmit(&huart2, (uint8_t*) msg, strlen(msg), HAL_MAX_DELAY);
+		memcpy(buffer, adc_buf, ADC_BUF_LEN);
+
+		float v1 = average(buffer, ADC_BUF_LEN) / 100;
+
+		// Moving average filter
+		float y1[ADC_BUF_LEN] = { 0.0f };
+		moving_average_filter(buffer, y1, ADC_BUF_LEN, MOVING_POINT);
+		float v2 = relative_average(y1, ADC_BUF_LEN, MOVING_POINT) / 100;
+
+		float y2[ADC_BUF_LEN] = { 0.0f };
+		moving_average_filterR(buffer, y2, ADC_BUF_LEN, MOVING_POINT);
+		float v3 = relative_average(y2, ADC_BUF_LEN, MOVING_POINT) / 100;
+
+		sprintf(
+				msg,
+				"Average value over %d samples normalized by %d: v1: %f, v2: %f, v3: %f\r\n",
+				ADC_BUF_LEN, 100, v1, v2, v3
+		);
+		console_log(msg);
+	}
+
+
+
+
 }
 /* USER CODE END 4 */
 
