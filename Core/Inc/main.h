@@ -49,42 +49,55 @@ extern "C" {
 
 /* USER CODE END EM */
 
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+void normalize(const uint16_t* samples, size_t length, float* output, uint8_t normalization);
 
 // Simple average filter
 // y[x] = x[i] + x[i-1] ... + x[i-N] / N
-void normalize(const uint16_t* samples, size_t length, float* output, uint8_t normalization);
-
 float average(const uint16_t* samples, size_t length);
 
 float relative_average(const float* samples, size_t length, uint8_t moving_point);
 
 // Moving Average Filter caluclated by convolution
-void moving_average_filter(const uint16_t* samples, float* filtered, size_t length, uint8_t moving_point);
+void moving_average_filter(const uint16_t* samples, float* filtered, size_t length, uint16_t moving_point);
 
 // Moving Average Filter caluclated by recursion
-void moving_average_filterR(const uint16_t* samples, float* filtered, size_t length, uint8_t moving_point);
+void moving_average_filterR(const uint16_t* samples, float* filtered, size_t length, uint16_t moving_point);
 
 void console_log(const char* message);
 
-void light_pin(const uint16_t value, const uint16_t threshold);
+void light_pin(GPIO_PinState state);
+
+uint16_t min(uint16_t* buffer, size_t length);
+
+uint16_t max(uint16_t* buffer, size_t length);
+
+float map(float val, const float in_min, const float in_max, const float out_min, const float out_max);
+
+void move_servo_by_emg(float emg);
+
+float normalize_emg(uint16_t* buffer);
+
+void emg_read_loop();
 
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define B1_Pin GPIO_PIN_13
-#define B1_GPIO_Port GPIOC
-#define Myoware_Pin GPIO_PIN_1
-#define Myoware_GPIO_Port GPIOC
+#define MYOWARE_Pin GPIO_PIN_0
+#define MYOWARE_GPIO_Port GPIOC
+#define SERVO_FEEDBACK_Pin GPIO_PIN_1
+#define SERVO_FEEDBACK_GPIO_Port GPIOC
 #define USART_TX_Pin GPIO_PIN_2
 #define USART_TX_GPIO_Port GPIOA
 #define USART_RX_Pin GPIO_PIN_3
 #define USART_RX_GPIO_Port GPIOA
-#define LD2_Pin GPIO_PIN_5
-#define LD2_GPIO_Port GPIOA
+#define BLUE_LED_Pin GPIO_PIN_6
+#define BLUE_LED_GPIO_Port GPIOA
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14

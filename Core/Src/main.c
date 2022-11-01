@@ -23,6 +23,8 @@
 /* USER CODE BEGIN Includes */
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
+#include <Servo.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -33,9 +35,10 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define ADC_BUF_LEN 255
+#define ADC1_BUF_LEN 1255
+#define ADC2_BUF_LEN 1
 #define MOVING_POINT 25
-#define TRESHOLD 110
+#define TRESHOLD 80.0
 
 /* USER CODE END PD */
 
@@ -49,24 +52,34 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
+DMA_HandleTypeDef hdma_adc1;
+DMA_HandleTypeDef hdma_adc2;
+
+TIM_HandleTypeDef htim1;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
 char msg[100];
-uint16_t analog_value;
-uint16_t adc_buf[ADC_BUF_LEN];
+float myoware_value;
+uint16_t servo_feedback_value;
+uint16_t adc1_buf[ADC1_BUF_LEN];
+uint16_t adc2_buf[ADC2_BUF_LEN];
+uint8_t adc1_conv_complete = 0;
 
+Servo servo;
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_ADC2_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_ADC2_Init(void);
+static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 
 
@@ -105,38 +118,45 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART2_UART_Init();
-  MX_ADC2_Init();
   MX_ADC1_Init();
+  MX_ADC2_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
 
-  HAL_ADC_Start_IT(&hadc2);
-  HAL_ADC_Start_DMA(&hadc1, (uint32_t*) adc_buf, ADC_BUF_LEN);
+
+  servo = new_servo(&htim1, TIM_CHANNEL_3, 0.0, 180.0, 1.0, 11.0, 0.8);
+  start_servo(&servo);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-	sprintf(msg, "%d\r\n", analog_value);
-	console_log(msg);
+	while (1)
+	{
+		//HAL_ADC_Start_DMA(&hadc2, (uint32_t*) adc2_buf, ADC2_BUF_LEN);
 
-	light_pin(analog_value, TRESHOLD);
+		// Read Samples from MYOWARE using DMA
+		emg_read_loop();
 
-	HAL_ADC_Start(&hadc2);
+		// Normalize the EMG Signal
+		float emg_val = normalize_emg(adc1_buf);
 
-	//	calculate ccr value based on desired duty_cycle
-	//ccr = (uint16_t)(duty_cycle/(float)(1+ARR))
-	//	Assign this value to the CCR register:
-	//__HAL_TIM_SET_COMPARE(hdl, TIM_CHANNEL_X, ccr);
-	//	Call the following to make sure the duty cycle gets updated
-	//hdl->Instance->EGR = TIM_EGR_UG;
+		// Map the EMG Signal to an Angle and move servo
+		move_servo_by_emg(emg_val);
+
+		// Light the PIN for DEBUG
+		light_pin(emg_val > TRESHOLD);
+
+
+		// Verify using a PID controller
+
 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+	}
   /* USER CODE END 3 */
 }
 
@@ -163,7 +183,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 8;
-  RCC_OscInitStruct.PLL.PLLN = 85;
+  RCC_OscInitStruct.PLL.PLLN = 84;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 2;
   RCC_OscInitStruct.PLL.PLLR = 2;
@@ -226,7 +246,7 @@ static void MX_ADC1_Init(void)
 
   /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
   */
-  sConfig.Channel = ADC_CHANNEL_11;
+  sConfig.Channel = ADC_CHANNEL_10;
   sConfig.Rank = 1;
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
@@ -262,14 +282,14 @@ static void MX_ADC2_Init(void)
   hadc2.Instance = ADC2;
   hadc2.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc2.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc2.Init.ScanConvMode = DISABLE;
+  hadc2.Init.ScanConvMode = ENABLE;
   hadc2.Init.ContinuousConvMode = ENABLE;
   hadc2.Init.DiscontinuousConvMode = DISABLE;
   hadc2.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc2.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc2.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc2.Init.NbrOfConversion = 1;
-  hadc2.Init.DMAContinuousRequests = DISABLE;
+  hadc2.Init.DMAContinuousRequests = ENABLE;
   hadc2.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc2) != HAL_OK)
   {
@@ -278,7 +298,7 @@ static void MX_ADC2_Init(void)
 
   /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
   */
-  sConfig.Channel = ADC_CHANNEL_10;
+  sConfig.Channel = ADC_CHANNEL_11;
   sConfig.Rank = 1;
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
@@ -288,6 +308,81 @@ static void MX_ADC2_Init(void)
   /* USER CODE BEGIN ADC2_Init 2 */
 
   /* USER CODE END ADC2_Init 2 */
+
+}
+
+/**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 30-1;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 56000-1;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim1, &sBreakDeadTimeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+  HAL_TIM_MspPostInit(&htim1);
 
 }
 
@@ -325,6 +420,25 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+  /* DMA2_Stream2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -340,20 +454,14 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LD2_Pin|GPIO_PIN_6, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : LD2_Pin PA6 */
-  GPIO_InitStruct.Pin = LD2_Pin|GPIO_PIN_6;
+  /*Configure GPIO pin : BLUE_LED_Pin */
+  GPIO_InitStruct.Pin = BLUE_LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  HAL_GPIO_Init(BLUE_LED_GPIO_Port, &GPIO_InitStruct);
 
 }
 
@@ -382,7 +490,7 @@ float relative_average(const float* samples, size_t length, uint8_t moving_point
 	return sum / (length - moving_point - 1) ;
 }
 
-void moving_average_filter(const uint16_t* samples, float* filtered, size_t length, uint8_t moving_point) {
+void moving_average_filter(const uint16_t* samples, float* filtered, size_t length, uint16_t moving_point) {
 	uint16_t half_interval = (moving_point - 1) / 2;
 
 	for (uint16_t i = half_interval; i < length - half_interval; i++) {
@@ -390,12 +498,12 @@ void moving_average_filter(const uint16_t* samples, float* filtered, size_t leng
 		for (int16_t j = -half_interval; j < half_interval; j++) {
 			filtered[i] = filtered[i] + samples[i + j];
 		}
-		filtered[i] = filtered[i] / moving_point;
+		filtered[i] = (float) filtered[i] / moving_point;
 	}
 
 }
 
-void moving_average_filterR(const uint16_t* samples, float* filtered, size_t length, uint8_t moving_point) {
+void moving_average_filterR(const uint16_t* samples, float* filtered, size_t length, uint16_t moving_point) {
 
 	float t_filtered[length];
 	memset(t_filtered, 0, length);
@@ -426,11 +534,67 @@ void console_log(const char* message) {
 }
 
 
-void light_pin(const uint16_t value, const uint16_t threshold) {
-	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, value > threshold);
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, value > threshold);
+void light_pin(GPIO_PinState state) {
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, state);
 }
 
+uint16_t min(uint16_t *buff, size_t length) {
+	uint16_t min = buff[0];
+	for (uint16_t i = 1; i < length; ++i) {
+		if (buff[i] < min) {
+			min = buff[i];
+		}
+	}
+	return min;
+}
+
+uint16_t max(uint16_t *buff, size_t length) {
+	uint16_t max = buff[0];
+	for (uint16_t i = 1; i < length; ++i) {
+		if (buff[i] > max) {
+			max = buff[i];
+		}
+	}
+	return max;
+}
+
+float map(float val, const float in_min, const float in_max, const float out_min, const float out_max) {
+	return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+void emg_read_loop() {
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t*) adc1_buf, ADC1_BUF_LEN);
+	while(adc1_conv_complete == 0) {
+
+	}
+	adc1_conv_complete = 0;
+}
+
+float normalize_emg(uint16_t* buffer) {
+	float myoware_filtered[ADC1_BUF_LEN] = { 0.0f };
+	moving_average_filter(buffer, myoware_filtered, ADC1_BUF_LEN, MOVING_POINT);
+	float myoware_avg = relative_average(myoware_filtered, ADC1_BUF_LEN, MOVING_POINT) / 10;
+
+	sprintf(
+		msg,
+		"Myoware = %.2f, min = %hu, max = %hu \r\n",
+		myoware_avg,
+		min(buffer, ADC1_BUF_LEN),
+		max(buffer, ADC1_BUF_LEN)
+	);
+	console_log(msg);
+
+	return myoware_avg;
+}
+
+void move_servo_by_emg(float emg) {
+	float target_angle = servo.max_angle / 2;
+	if (emg > TRESHOLD) {
+		target_angle = servo.max_angle - 15.0;
+	}
+	servo_write_deg(&servo, target_angle);
+	// map(myoware_avg, 3.5, 10.5, servo.min_angle, servo.max_angle)
+}
 
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
 }
@@ -439,37 +603,19 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 
-	if (hadc == &hadc2) {
-		analog_value = HAL_ADC_GetValue(&hadc2);
+	if (hadc == &hadc1) {
+		adc1_conv_complete = 1;
 	}
 
-	if (hadc == &hadc1) {
-		uint16_t buffer[ADC_BUF_LEN] = { 0 };
-		//normalize(adc_buf, ADC_BUF_LEN, buffer, 1);
-
-		memcpy(buffer, adc_buf, ADC_BUF_LEN);
-
-		float v1 = average(buffer, ADC_BUF_LEN) / 100;
-
-		// Moving average filter
-		float y1[ADC_BUF_LEN] = { 0.0f };
-		moving_average_filter(buffer, y1, ADC_BUF_LEN, MOVING_POINT);
-		float v2 = relative_average(y1, ADC_BUF_LEN, MOVING_POINT) / 100;
-
-		float y2[ADC_BUF_LEN] = { 0.0f };
-		moving_average_filterR(buffer, y2, ADC_BUF_LEN, MOVING_POINT);
-		float v3 = relative_average(y2, ADC_BUF_LEN, MOVING_POINT) / 100;
-
+	if (hadc == &hadc2) {
+		servo_feedback_value = adc2_buf[0];
 		sprintf(
-				msg,
-				"Average value over %d samples normalized by %d: v1: %f, v2: %f, v3: %f\r\n",
-				ADC_BUF_LEN, 100, v1, v2, v3
+			msg,
+			"Servo feedback value = %d \r\n",
+			servo_feedback_value
 		);
 		console_log(msg);
 	}
-
-
-
 
 }
 /* USER CODE END 4 */
