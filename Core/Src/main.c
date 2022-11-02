@@ -35,7 +35,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define ADC1_BUF_LEN 1255
+#define ADC1_BUF_LEN 2555
 #define ADC2_BUF_LEN 1
 #define MOVING_POINT 25
 #define TRESHOLD 80.0
@@ -62,12 +62,15 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 
 char msg[100];
-float myoware_value;
-uint16_t servo_feedback_value;
 uint16_t adc1_buf[ADC1_BUF_LEN];
 uint16_t adc2_buf[ADC2_BUF_LEN];
 uint8_t adc1_conv_complete = 0;
+uint8_t adc2_conv_complete = 0;
 
+float emg_value = 0.0f;
+float setpoint_angle = 0.0f;
+float target_angle = 0.0f;
+float feedbeck_value = 0.0f;
 Servo servo;
 
 /* USER CODE END PV */
@@ -141,16 +144,19 @@ int main(void)
 		emg_read_loop();
 
 		// Normalize the EMG Signal
-		float emg_val = normalize_emg(adc1_buf);
+		emg_value = normalize_emg(adc1_buf);
 
 		// Map the EMG Signal to an Angle and move servo
-		move_servo_by_emg(emg_val);
-
-		// Light the PIN for DEBUG
-		light_pin(emg_val > TRESHOLD);
-
+		setpoint_angle = emg_to_angle(emg_value);
 
 		// Verify using a PID controller
+		target_angle = pid_compute(setpoint_angle);
+
+		servo_write_deg(&servo, target_angle);
+		// map(myoware_avg, 3.5, 10.5, servo.min_angle, servo.max_angle)
+
+		// Light the PIN for DEBUG
+		light_pin(emg_value > TRESHOLD);
 
 
     /* USER CODE END WHILE */
@@ -587,13 +593,12 @@ float normalize_emg(uint16_t* buffer) {
 	return myoware_avg;
 }
 
-void move_servo_by_emg(float emg) {
+float emg_to_angle(float emg) {
 	float target_angle = servo.max_angle / 2;
 	if (emg > TRESHOLD) {
 		target_angle = servo.max_angle - 15.0;
 	}
-	servo_write_deg(&servo, target_angle);
-	// map(myoware_avg, 3.5, 10.5, servo.min_angle, servo.max_angle)
+	return target_angle;
 }
 
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
