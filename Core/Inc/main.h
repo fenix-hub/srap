@@ -55,39 +55,24 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-void normalize(const uint16_t* samples, size_t length, float* output, uint8_t normalization);
 
-// Simple average filter
-// y[x] = x[i] + x[i-1] ... + x[i-N] / N
-float average(const uint16_t* samples, size_t length);
-
-float relative_average(const float* samples, size_t length, uint8_t moving_point);
-
-// Moving Average Filter caluclated by convolution
-void moving_average_filter(const uint16_t* samples, float* filtered, size_t length, uint16_t moving_point);
-
-// Moving Average Filter caluclated by recursion
-void moving_average_filterR(const uint16_t* samples, float* filtered, size_t length, uint16_t moving_point);
-
-void console_log(const char* message);
-
-void light_pin(GPIO_PinState state);
-
-uint16_t min(uint16_t* buffer, size_t length);
-
-uint16_t max(uint16_t* buffer, size_t length);
-
-float map(float val, const float in_min, const float in_max, const float out_min, const float out_max);
-
-void move_servo_by_emg(float emg);
-
-float normalize_emg(uint16_t* buffer);
+void console_log(const char *message);
+void light_led(GPIO_PinState state);
 
 void emg_read_loop();
+float normalize_emg(uint16_t *buffer);
+float emg_to_angle(float emg);
+
+uint16_t read_feedback();
+void calibrate_actuator(Servo servo, uint16_t *min_calibration, uint16_t *max_calibration, uint16_t *mid_calibration);
+void configure_actuator(Servo servo, uint16_t min_calibration, uint16_t max_calibration, uint16_t mid_calibration);
 
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define CHANGE_STATE_Pin GPIO_PIN_13
+#define CHANGE_STATE_GPIO_Port GPIOC
+#define CHANGE_STATE_EXTI_IRQn EXTI15_10_IRQn
 #define MYOWARE_Pin GPIO_PIN_0
 #define MYOWARE_GPIO_Port GPIOC
 #define SERVO_FEEDBACK_Pin GPIO_PIN_1
