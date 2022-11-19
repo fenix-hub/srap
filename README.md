@@ -1,7 +1,7 @@
 # srap
 Embedded Control project
 
-docs 👉 [https://nicolosantilio.com/srap]
+docs 👉 [nicolosantilio.com/srap](https://nicolosantilio.com/srap)
 
 ---
 
